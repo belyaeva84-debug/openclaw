@@ -203,7 +203,10 @@ export async function startGatewayServer(
     );
   }
 
-  const autoEnable = applyPluginAutoEnable({ config: configSnapshot.config, env: process.env });
+  const autoEnable = await applyPluginAutoEnable({
+    config: configSnapshot.config,
+    env: process.env,
+  });
   if (autoEnable.changes.length > 0) {
     try {
       await writeConfigFile(autoEnable.config);

@@ -9,7 +9,7 @@ import type { AgentBinding } from "../config/types.agents.js";
 import type { HooksConfig } from "../config/types.hooks.js";
 import type { TailscaleWhoisIdentity } from "../infra/tailscale.js";
 import type { PluginRegistry } from "../plugins/registry.js";
-import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
+import { applyPluginAutoEnableSync } from "../config/plugin-auto-enable.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
 
@@ -512,7 +512,7 @@ vi.mock("../config/config.js", async () => {
         hooks,
         cron,
       };
-      return applyPluginAutoEnable({ config, env: process.env }).config;
+      return applyPluginAutoEnableSync({ config, env: process.env }).config;
     },
     parseConfigJson5: (raw: string) => {
       try {

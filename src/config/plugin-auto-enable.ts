@@ -2,7 +2,9 @@ import type { OpenClawConfig } from "./config.js";
 import { normalizeProviderId } from "../agents/model-selection.js";
 import {
   getChannelPluginCatalogEntry,
+  getChannelPluginCatalogEntryAsync,
   listChannelPluginCatalogEntries,
+  listChannelPluginCatalogEntriesAsync,
 } from "../channels/plugins/catalog.js";
 import {
   getChatChannelMeta,
@@ -21,13 +23,6 @@ export type PluginAutoEnableResult = {
   config: OpenClawConfig;
   changes: string[];
 };
-
-const CHANNEL_PLUGIN_IDS = Array.from(
-  new Set([
-    ...listChatChannels().map((meta) => meta.id),
-    ...listChannelPluginCatalogEntries().map((entry) => entry.id),
-  ]),
-);
 
 const PROVIDER_PLUGIN_IDS: Array<{ pluginId: string; providerId: string }> = [
   { pluginId: "google-antigravity-auth", providerId: "google-antigravity" },
@@ -309,12 +304,63 @@ function isProviderConfigured(cfg: OpenClawConfig, providerId: string): boolean 
   return false;
 }
 
-function resolveConfiguredPlugins(
+async function resolveConfiguredPlugins(
+  cfg: OpenClawConfig,
+  env: NodeJS.ProcessEnv,
+): Promise<PluginEnableChange[]> {
+  const changes: PluginEnableChange[] = [];
+  const channelPluginIds = Array.from(
+    new Set([
+      ...listChatChannels().map((meta) => meta.id),
+      ...(await listChannelPluginCatalogEntriesAsync()).map((entry) => entry.id),
+    ]),
+  );
+
+  const channelIds = new Set(channelPluginIds);
+  const configuredChannels = cfg.channels as Record<string, unknown> | undefined;
+  if (configuredChannels && typeof configuredChannels === "object") {
+    for (const key of Object.keys(configuredChannels)) {
+      if (key === "defaults") {
+        continue;
+      }
+      channelIds.add(key);
+    }
+  }
+  for (const channelId of channelIds) {
+    if (!channelId) {
+      continue;
+    }
+    if (isChannelConfigured(cfg, channelId, env)) {
+      changes.push({
+        pluginId: channelId,
+        reason: `${channelId} configured`,
+      });
+    }
+  }
+  for (const mapping of PROVIDER_PLUGIN_IDS) {
+    if (isProviderConfigured(cfg, mapping.providerId)) {
+      changes.push({
+        pluginId: mapping.pluginId,
+        reason: `${mapping.providerId} auth configured`,
+      });
+    }
+  }
+  return changes;
+}
+
+function resolveConfiguredPluginsSync(
   cfg: OpenClawConfig,
   env: NodeJS.ProcessEnv,
 ): PluginEnableChange[] {
   const changes: PluginEnableChange[] = [];
-  const channelIds = new Set(CHANNEL_PLUGIN_IDS);
+  const channelPluginIds = Array.from(
+    new Set([
+      ...listChatChannels().map((meta) => meta.id),
+      ...listChannelPluginCatalogEntries().map((entry) => entry.id),
+    ]),
+  );
+
+  const channelIds = new Set(channelPluginIds);
   const configuredChannels = cfg.channels as Record<string, unknown> | undefined;
   if (configuredChannels && typeof configuredChannels === "object") {
     for (const key of Object.keys(configuredChannels)) {
@@ -356,7 +402,16 @@ function isPluginDenied(cfg: OpenClawConfig, pluginId: string): boolean {
   return Array.isArray(deny) && deny.includes(pluginId);
 }
 
-function resolvePreferredOverIds(pluginId: string): string[] {
+async function resolvePreferredOverIds(pluginId: string): Promise<string[]> {
+  const normalized = normalizeChatChannelId(pluginId);
+  if (normalized) {
+    return getChatChannelMeta(normalized).preferOver ?? [];
+  }
+  const catalogEntry = await getChannelPluginCatalogEntryAsync(pluginId);
+  return catalogEntry?.meta.preferOver ?? [];
+}
+
+function resolvePreferredOverIdsSync(pluginId: string): string[] {
   const normalized = normalizeChatChannelId(pluginId);
   if (normalized) {
     return getChatChannelMeta(normalized).preferOver ?? [];
@@ -365,7 +420,30 @@ function resolvePreferredOverIds(pluginId: string): string[] {
   return catalogEntry?.meta.preferOver ?? [];
 }
 
-function shouldSkipPreferredPluginAutoEnable(
+async function shouldSkipPreferredPluginAutoEnable(
+  cfg: OpenClawConfig,
+  entry: PluginEnableChange,
+  configured: PluginEnableChange[],
+): Promise<boolean> {
+  for (const other of configured) {
+    if (other.pluginId === entry.pluginId) {
+      continue;
+    }
+    if (isPluginDenied(cfg, other.pluginId)) {
+      continue;
+    }
+    if (isPluginExplicitlyDisabled(cfg, other.pluginId)) {
+      continue;
+    }
+    const preferOver = await resolvePreferredOverIds(other.pluginId);
+    if (preferOver.includes(entry.pluginId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function shouldSkipPreferredPluginAutoEnableSync(
   cfg: OpenClawConfig,
   entry: PluginEnableChange,
   configured: PluginEnableChange[],
@@ -380,7 +458,7 @@ function shouldSkipPreferredPluginAutoEnable(
     if (isPluginExplicitlyDisabled(cfg, other.pluginId)) {
       continue;
     }
-    const preferOver = resolvePreferredOverIds(other.pluginId);
+    const preferOver = resolvePreferredOverIdsSync(other.pluginId);
     if (preferOver.includes(entry.pluginId)) {
       return true;
     }
@@ -429,12 +507,12 @@ function formatAutoEnableChange(entry: PluginEnableChange): string {
   return `${reason}, not enabled yet.`;
 }
 
-export function applyPluginAutoEnable(params: {
+export async function applyPluginAutoEnable(params: {
   config: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
-}): PluginAutoEnableResult {
+}): Promise<PluginAutoEnableResult> {
   const env = params.env ?? process.env;
-  const configured = resolveConfiguredPlugins(params.config, env);
+  const configured = await resolveConfiguredPlugins(params.config, env);
   if (configured.length === 0) {
     return { config: params.config, changes: [] };
   }
@@ -453,7 +531,48 @@ export function applyPluginAutoEnable(params: {
     if (isPluginExplicitlyDisabled(next, entry.pluginId)) {
       continue;
     }
-    if (shouldSkipPreferredPluginAutoEnable(next, entry, configured)) {
+    if (await shouldSkipPreferredPluginAutoEnable(next, entry, configured)) {
+      continue;
+    }
+    const allow = next.plugins?.allow;
+    const allowMissing = Array.isArray(allow) && !allow.includes(entry.pluginId);
+    const alreadyEnabled = next.plugins?.entries?.[entry.pluginId]?.enabled === true;
+    if (alreadyEnabled && !allowMissing) {
+      continue;
+    }
+    next = registerPluginEntry(next, entry.pluginId);
+    next = ensureAllowlisted(next, entry.pluginId);
+    changes.push(formatAutoEnableChange(entry));
+  }
+
+  return { config: next, changes };
+}
+
+export function applyPluginAutoEnableSync(params: {
+  config: OpenClawConfig;
+  env?: NodeJS.ProcessEnv;
+}): PluginAutoEnableResult {
+  const env = params.env ?? process.env;
+  const configured = resolveConfiguredPluginsSync(params.config, env);
+  if (configured.length === 0) {
+    return { config: params.config, changes: [] };
+  }
+
+  let next = params.config;
+  const changes: string[] = [];
+
+  if (next.plugins?.enabled === false) {
+    return { config: next, changes };
+  }
+
+  for (const entry of configured) {
+    if (isPluginDenied(next, entry.pluginId)) {
+      continue;
+    }
+    if (isPluginExplicitlyDisabled(next, entry.pluginId)) {
+      continue;
+    }
+    if (shouldSkipPreferredPluginAutoEnableSync(next, entry, configured)) {
       continue;
     }
     const allow = next.plugins?.allow;
