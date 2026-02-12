@@ -29,7 +29,7 @@ type ParsedUsageEntry = {
   timestamp?: Date;
 };
 
-type ParsedTranscriptEntry = {
+export type ParsedTranscriptEntry = {
   message: Record<string, unknown>;
   role?: "user" | "assistant";
   timestamp?: Date;
@@ -307,6 +307,37 @@ const applyCostTotal = (totals: CostUsageTotals, costTotal: number | undefined) 
   totals.totalCost += costTotal;
 };
 
+export function processTranscriptLine(
+  line: string,
+  config?: OpenClawConfig,
+): ParsedTranscriptEntry | null {
+  const trimmed = line.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+    const entry = parseTranscriptEntry(parsed);
+    if (!entry) {
+      return null;
+    }
+
+    if (entry.usage && entry.costTotal === undefined) {
+      const cost = resolveModelCostConfig({
+        provider: entry.provider,
+        model: entry.model,
+        config: config,
+      });
+      entry.costTotal = estimateUsageCost({ usage: entry.usage, cost });
+    }
+
+    return entry;
+  } catch {
+    // Ignore malformed lines
+    return null;
+  }
+}
+
 async function scanTranscriptFile(params: {
   filePath: string;
   config?: OpenClawConfig;
@@ -316,29 +347,9 @@ async function scanTranscriptFile(params: {
   const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
   for await (const line of rl) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-    try {
-      const parsed = JSON.parse(trimmed) as Record<string, unknown>;
-      const entry = parseTranscriptEntry(parsed);
-      if (!entry) {
-        continue;
-      }
-
-      if (entry.usage && entry.costTotal === undefined) {
-        const cost = resolveModelCostConfig({
-          provider: entry.provider,
-          model: entry.model,
-          config: params.config,
-        });
-        entry.costTotal = estimateUsageCost({ usage: entry.usage, cost });
-      }
-
+    const entry = processTranscriptLine(line, params.config);
+    if (entry) {
       params.onEntry(entry);
-    } catch {
-      // Ignore malformed lines
     }
   }
 }
