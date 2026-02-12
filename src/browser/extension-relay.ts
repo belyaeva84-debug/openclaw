@@ -143,6 +143,7 @@ function rejectUpgrade(socket: Duplex, status: number, bodyText: string) {
 }
 
 const serversByPort = new Map<number, ChromeExtensionRelayServer>();
+const pendingServersByPort = new Map<number, Promise<ChromeExtensionRelayServer>>();
 const relayAuthByPort = new Map<number, string>();
 
 function relayAuthTokenForUrl(url: string): string | null {
@@ -187,7 +188,13 @@ export async function ensureChromeExtensionRelayServer(opts: {
     return existing;
   }
 
-  let extensionWs: WebSocket | null = null;
+  const pending = pendingServersByPort.get(info.port);
+  if (pending) {
+    return pending;
+  }
+
+  const promise = (async () => {
+    let extensionWs: WebSocket | null = null;
   const cdpClients = new Set<WebSocket>();
   const connectedTargets = new Map<string, ConnectedTarget>();
 
@@ -703,48 +710,56 @@ export async function ensureChromeExtensionRelayServer(opts: {
     });
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.listen(info.port, info.host, () => resolve());
-    server.once("error", reject);
-  });
+    await new Promise<void>((resolve, reject) => {
+      server.listen(info.port, info.host, () => resolve());
+      server.once("error", reject);
+    });
 
-  const addr = server.address() as AddressInfo | null;
-  const port = addr?.port ?? info.port;
-  const host = info.host;
-  const baseUrl = `${new URL(info.baseUrl).protocol}//${host}:${port}`;
+    const addr = server.address() as AddressInfo | null;
+    const port = addr?.port ?? info.port;
+    const host = info.host;
+    const baseUrl = `${new URL(info.baseUrl).protocol}//${host}:${port}`;
 
-  const relay: ChromeExtensionRelayServer = {
-    host,
-    port,
-    baseUrl,
-    cdpWsUrl: `ws://${host}:${port}/cdp`,
-    extensionConnected: () => Boolean(extensionWs),
-    stop: async () => {
-      serversByPort.delete(port);
-      relayAuthByPort.delete(port);
-      try {
-        extensionWs?.close(1001, "server stopping");
-      } catch {
-        // ignore
-      }
-      for (const ws of cdpClients) {
+    const relay: ChromeExtensionRelayServer = {
+      host,
+      port,
+      baseUrl,
+      cdpWsUrl: `ws://${host}:${port}/cdp`,
+      extensionConnected: () => Boolean(extensionWs),
+      stop: async () => {
+        serversByPort.delete(port);
+        relayAuthByPort.delete(port);
         try {
-          ws.close(1001, "server stopping");
+          extensionWs?.close(1001, "server stopping");
         } catch {
           // ignore
         }
-      }
-      await new Promise<void>((resolve) => {
-        server.close(() => resolve());
-      });
-      wssExtension.close();
-      wssCdp.close();
-    },
-  };
+        for (const ws of cdpClients) {
+          try {
+            ws.close(1001, "server stopping");
+          } catch {
+            // ignore
+          }
+        }
+        await new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        });
+        wssExtension.close();
+        wssCdp.close();
+      },
+    };
 
-  relayAuthByPort.set(port, relayAuthToken);
-  serversByPort.set(port, relay);
-  return relay;
+    relayAuthByPort.set(port, relayAuthToken);
+    serversByPort.set(port, relay);
+    return relay;
+  })();
+
+  pendingServersByPort.set(info.port, promise);
+  try {
+    return await promise;
+  } finally {
+    pendingServersByPort.delete(info.port);
+  }
 }
 
 export async function stopChromeExtensionRelayServer(opts: { cdpUrl: string }): Promise<boolean> {
