@@ -85,7 +85,7 @@ describe("memory vector dedupe", () => {
 
     const entry = await buildFileEntry(path.join(workspaceDir, "MEMORY.md"), workspaceDir);
     await (
-      manager as unknown as {
+      (manager as any).syncer as {
         indexFile: (entry: unknown, options: { source: "memory" }) => Promise<void>;
       }
     ).indexFile(entry, { source: "memory" });
