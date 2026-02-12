@@ -1630,17 +1630,26 @@ export class MemoryIndexManager implements MemorySearchManager {
         `   dims=excluded.dims,\n` +
         `   updated_at=excluded.updated_at`,
     );
-    for (const entry of entries) {
-      const embedding = entry.embedding ?? [];
-      stmt.run(
-        this.provider.id,
-        this.provider.model,
-        this.providerKey,
-        entry.hash,
-        JSON.stringify(embedding),
-        embedding.length,
-        now,
-      );
+    try {
+      this.db.exec("BEGIN");
+      for (const entry of entries) {
+        const embedding = entry.embedding ?? [];
+        stmt.run(
+          this.provider.id,
+          this.provider.model,
+          this.providerKey,
+          entry.hash,
+          JSON.stringify(embedding),
+          embedding.length,
+          now,
+        );
+      }
+      this.db.exec("COMMIT");
+    } catch (err) {
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {}
+      throw err;
     }
   }
 
