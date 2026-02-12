@@ -100,7 +100,7 @@ function resolveExternalCatalogPaths(options: CatalogOptions): string[] {
   return DEFAULT_CATALOG_PATHS;
 }
 
-function loadExternalCatalogEntries(options: CatalogOptions): ExternalCatalogEntry[] {
+export function loadExternalCatalogEntries(options: CatalogOptions): ExternalCatalogEntry[] {
   const paths = resolveExternalCatalogPaths(options);
   const entries: ExternalCatalogEntry[] = [];
   for (const rawPath of paths) {
@@ -116,6 +116,25 @@ function loadExternalCatalogEntries(options: CatalogOptions): ExternalCatalogEnt
     }
   }
   return entries;
+}
+
+export async function loadExternalCatalogEntriesAsync(
+  options: CatalogOptions,
+): Promise<ExternalCatalogEntry[]> {
+  const paths = resolveExternalCatalogPaths(options);
+  const tasks = paths.map(async (rawPath) => {
+    const resolved = resolveUserPath(rawPath);
+    try {
+      const content = await fs.promises.readFile(resolved, "utf-8");
+      const payload = JSON.parse(content) as unknown;
+      return parseCatalogEntries(payload);
+    } catch {
+      return [];
+    }
+  });
+
+  const results = await Promise.all(tasks);
+  return results.flat();
 }
 
 function toChannelMeta(params: {
@@ -295,6 +314,46 @@ export function listChannelPluginCatalogEntries(
     });
 }
 
+export async function listChannelPluginCatalogEntriesAsync(
+  options: CatalogOptions = {},
+): Promise<ChannelPluginCatalogEntry[]> {
+  const discovery = discoverOpenClawPlugins({ workspaceDir: options.workspaceDir });
+  const resolved = new Map<string, { entry: ChannelPluginCatalogEntry; priority: number }>();
+
+  for (const candidate of discovery.candidates) {
+    const entry = buildCatalogEntry(candidate);
+    if (!entry) {
+      continue;
+    }
+    const priority = ORIGIN_PRIORITY[candidate.origin] ?? 99;
+    const existing = resolved.get(entry.id);
+    if (!existing || priority < existing.priority) {
+      resolved.set(entry.id, { entry, priority });
+    }
+  }
+
+  const rawExternalEntries = await loadExternalCatalogEntriesAsync(options);
+  const externalEntries = rawExternalEntries
+    .map((entry) => buildExternalCatalogEntry(entry))
+    .filter((entry): entry is ChannelPluginCatalogEntry => Boolean(entry));
+  for (const entry of externalEntries) {
+    if (!resolved.has(entry.id)) {
+      resolved.set(entry.id, { entry, priority: 99 });
+    }
+  }
+
+  return Array.from(resolved.values())
+    .map(({ entry }) => entry)
+    .toSorted((a, b) => {
+      const orderA = a.meta.order ?? 999;
+      const orderB = b.meta.order ?? 999;
+      if (orderA !== orderB) {
+        return orderA - orderB;
+      }
+      return a.meta.label.localeCompare(b.meta.label);
+    });
+}
+
 export function getChannelPluginCatalogEntry(
   id: string,
   options: CatalogOptions = {},
@@ -304,4 +363,16 @@ export function getChannelPluginCatalogEntry(
     return undefined;
   }
   return listChannelPluginCatalogEntries(options).find((entry) => entry.id === trimmed);
+}
+
+export async function getChannelPluginCatalogEntryAsync(
+  id: string,
+  options: CatalogOptions = {},
+): Promise<ChannelPluginCatalogEntry | undefined> {
+  const trimmed = id.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const entries = await listChannelPluginCatalogEntriesAsync(options);
+  return entries.find((entry) => entry.id === trimmed);
 }

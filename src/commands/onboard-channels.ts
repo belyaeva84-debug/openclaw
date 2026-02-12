@@ -10,7 +10,7 @@ import type {
   SetupChannelsOptions,
 } from "./onboarding/types.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
-import { listChannelPluginCatalogEntries } from "../channels/plugins/catalog.js";
+import { listChannelPluginCatalogEntriesAsync } from "../channels/plugins/catalog.js";
 import { resolveChannelDefaultAccountId } from "../channels/plugins/helpers.js";
 import { listChannelPlugins, getChannelPlugin } from "../channels/plugins/index.js";
 import {
@@ -36,7 +36,7 @@ type ConfiguredChannelAction = "update" | "disable" | "delete" | "skip";
 
 type ChannelStatusSummary = {
   installedPlugins: ReturnType<typeof listChannelPlugins>;
-  catalogEntries: ReturnType<typeof listChannelPluginCatalogEntries>;
+  catalogEntries: Awaited<ReturnType<typeof listChannelPluginCatalogEntriesAsync>>;
   statusByChannel: Map<ChannelChoice, ChannelOnboardingStatus>;
   statusLines: string[];
 };
@@ -116,7 +116,7 @@ async function collectChannelStatus(params: {
   const installedPlugins = listChannelPlugins();
   const installedIds = new Set(installedPlugins.map((plugin) => plugin.id));
   const workspaceDir = resolveAgentWorkspaceDir(params.cfg, resolveDefaultAgentId(params.cfg));
-  const catalogEntries = listChannelPluginCatalogEntries({ workspaceDir }).filter(
+  const catalogEntries = (await listChannelPluginCatalogEntriesAsync({ workspaceDir })).filter(
     (entry) => !installedIds.has(entry.id),
   );
   const statusEntries = await Promise.all(
@@ -403,12 +403,12 @@ export async function setupChannels(
       };
     });
 
-  const getChannelEntries = () => {
+  const getChannelEntries = async () => {
     const core = listChatChannels();
     const installed = listChannelPlugins();
     const installedIds = new Set(installed.map((plugin) => plugin.id));
     const workspaceDir = resolveAgentWorkspaceDir(next, resolveDefaultAgentId(next));
-    const catalog = listChannelPluginCatalogEntries({ workspaceDir }).filter(
+    const catalog = (await listChannelPluginCatalogEntriesAsync({ workspaceDir })).filter(
       (entry) => !installedIds.has(entry.id),
     );
     const metaById = new Map<string, ChannelMeta>();
@@ -568,7 +568,7 @@ export async function setupChannels(
   };
 
   const handleChannelChoice = async (channel: ChannelChoice) => {
-    const { catalogById } = getChannelEntries();
+    const { catalogById } = await getChannelEntries();
     const catalogEntry = catalogById.get(channel);
     if (catalogEntry) {
       const workspaceDir = resolveAgentWorkspaceDir(next, resolveDefaultAgentId(next));
@@ -608,7 +608,7 @@ export async function setupChannels(
   };
 
   if (options?.quickstartDefaults) {
-    const { entries } = getChannelEntries();
+    const { entries } = await getChannelEntries();
     const choice = (await prompter.select({
       message: "Select channel (QuickStart)",
       options: [
@@ -628,7 +628,7 @@ export async function setupChannels(
     const doneValue = "__done__" as const;
     const initialValue = options?.initialSelection?.[0] ?? quickstartDefault;
     while (true) {
-      const { entries } = getChannelEntries();
+      const { entries } = await getChannelEntries();
       const choice = (await prompter.select({
         message: "Select a channel",
         options: [
@@ -651,7 +651,7 @@ export async function setupChannels(
   options?.onSelection?.(selection);
 
   const selectionNotes = new Map<string, string>();
-  const { entries: selectionEntries } = getChannelEntries();
+  const { entries: selectionEntries } = await getChannelEntries();
   for (const entry of selectionEntries) {
     selectionNotes.set(entry.id, formatChannelSelectionLine(entry.meta, formatDocsLink));
   }

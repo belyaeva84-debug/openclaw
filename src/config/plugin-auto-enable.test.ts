@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { applyPluginAutoEnable } from "./plugin-auto-enable.js";
 
 describe("applyPluginAutoEnable", () => {
-  it("configures channel plugins with disabled state and updates allowlist", () => {
-    const result = applyPluginAutoEnable({
+  it("configures channel plugins with disabled state and updates allowlist", async () => {
+    const result = await applyPluginAutoEnable({
       config: {
         channels: { slack: { botToken: "x" } },
         plugins: { allow: ["telegram"] },
@@ -16,8 +16,8 @@ describe("applyPluginAutoEnable", () => {
     expect(result.changes.join("\n")).toContain("Slack configured, not enabled yet.");
   });
 
-  it("respects explicit disable", () => {
-    const result = applyPluginAutoEnable({
+  it("respects explicit disable", async () => {
+    const result = await applyPluginAutoEnable({
       config: {
         channels: { slack: { botToken: "x" } },
         plugins: { entries: { slack: { enabled: false } } },
@@ -29,8 +29,8 @@ describe("applyPluginAutoEnable", () => {
     expect(result.changes).toEqual([]);
   });
 
-  it("configures irc as disabled when configured via env", () => {
-    const result = applyPluginAutoEnable({
+  it("configures irc as disabled when configured via env", async () => {
+    const result = await applyPluginAutoEnable({
       config: {},
       env: {
         IRC_HOST: "irc.libera.chat",
@@ -42,8 +42,8 @@ describe("applyPluginAutoEnable", () => {
     expect(result.changes.join("\n")).toContain("IRC configured, not enabled yet.");
   });
 
-  it("configures provider auth plugins as disabled when profiles exist", () => {
-    const result = applyPluginAutoEnable({
+  it("configures provider auth plugins as disabled when profiles exist", async () => {
+    const result = await applyPluginAutoEnable({
       config: {
         auth: {
           profiles: {
@@ -60,8 +60,8 @@ describe("applyPluginAutoEnable", () => {
     expect(result.config.plugins?.entries?.["google-antigravity-auth"]?.enabled).toBe(false);
   });
 
-  it("skips when plugins are globally disabled", () => {
-    const result = applyPluginAutoEnable({
+  it("skips when plugins are globally disabled", async () => {
+    const result = await applyPluginAutoEnable({
       config: {
         channels: { slack: { botToken: "x" } },
         plugins: { enabled: false },
@@ -74,8 +74,8 @@ describe("applyPluginAutoEnable", () => {
   });
 
   describe("preferOver channel prioritization", () => {
-    it("prefers bluebubbles: skips imessage auto-configure when both are configured", () => {
-      const result = applyPluginAutoEnable({
+    it("prefers bluebubbles: skips imessage auto-configure when both are configured", async () => {
+      const result = await applyPluginAutoEnable({
         config: {
           channels: {
             bluebubbles: { serverUrl: "http://localhost:1234", password: "x" },
@@ -91,8 +91,8 @@ describe("applyPluginAutoEnable", () => {
       expect(result.changes.join("\n")).not.toContain("iMessage configured, not enabled yet.");
     });
 
-    it("keeps imessage enabled if already explicitly enabled (non-destructive)", () => {
-      const result = applyPluginAutoEnable({
+    it("keeps imessage enabled if already explicitly enabled (non-destructive)", async () => {
+      const result = await applyPluginAutoEnable({
         config: {
           channels: {
             bluebubbles: { serverUrl: "http://localhost:1234", password: "x" },
@@ -107,8 +107,8 @@ describe("applyPluginAutoEnable", () => {
       expect(result.config.plugins?.entries?.imessage?.enabled).toBe(true);
     });
 
-    it("allows imessage auto-configure when bluebubbles is explicitly disabled", () => {
-      const result = applyPluginAutoEnable({
+    it("allows imessage auto-configure when bluebubbles is explicitly disabled", async () => {
+      const result = await applyPluginAutoEnable({
         config: {
           channels: {
             bluebubbles: { serverUrl: "http://localhost:1234", password: "x" },
@@ -124,8 +124,8 @@ describe("applyPluginAutoEnable", () => {
       expect(result.changes.join("\n")).toContain("iMessage configured, not enabled yet.");
     });
 
-    it("allows imessage auto-configure when bluebubbles is in deny list", () => {
-      const result = applyPluginAutoEnable({
+    it("allows imessage auto-configure when bluebubbles is in deny list", async () => {
+      const result = await applyPluginAutoEnable({
         config: {
           channels: {
             bluebubbles: { serverUrl: "http://localhost:1234", password: "x" },
@@ -140,8 +140,8 @@ describe("applyPluginAutoEnable", () => {
       expect(result.config.plugins?.entries?.imessage?.enabled).toBe(false);
     });
 
-    it("configures imessage as disabled when only imessage is configured", () => {
-      const result = applyPluginAutoEnable({
+    it("configures imessage as disabled when only imessage is configured", async () => {
+      const result = await applyPluginAutoEnable({
         config: {
           channels: { imessage: { cliPath: "/usr/local/bin/imsg" } },
         },
