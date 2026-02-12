@@ -1,4 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { isReasoningTagProvider } from "./provider-utils";
+
+describe("isReasoningTagProvider", () => {
+  it("should return false for null, undefined, or empty string", () => {
+    expect(isReasoningTagProvider(null)).toBe(false);
+    expect(isReasoningTagProvider(undefined)).toBe(false);
 import { isReasoningTagProvider } from "./provider-utils.js";
 
 describe("isReasoningTagProvider", () => {
@@ -9,12 +15,26 @@ describe("isReasoningTagProvider", () => {
     expect(isReasoningTagProvider("   ")).toBe(false);
   });
 
+  it("should return true for exact matches of known providers", () => {
   it("returns true for exact matches", () => {
     expect(isReasoningTagProvider("ollama")).toBe(true);
     expect(isReasoningTagProvider("google-gemini-cli")).toBe(true);
     expect(isReasoningTagProvider("google-generative-ai")).toBe(true);
   });
 
+  it("should be case-insensitive", () => {
+    expect(isReasoningTagProvider("Ollama")).toBe(true);
+    expect(isReasoningTagProvider("GOOGLE-GEMINI-CLI")).toBe(true);
+    expect(isReasoningTagProvider("GoOgLe-GeNeRaTiVe-Ai")).toBe(true);
+  });
+
+  it("should return true for providers containing 'google-antigravity'", () => {
+    expect(isReasoningTagProvider("google-antigravity")).toBe(true);
+    expect(isReasoningTagProvider("google-antigravity/gemini-3")).toBe(true);
+    expect(isReasoningTagProvider("google-antigravity-plus")).toBe(true);
+  });
+
+  it("should return true for providers containing 'minimax'", () => {
   it("is case insensitive", () => {
     expect(isReasoningTagProvider("OLLAMA")).toBe(true);
     expect(isReasoningTagProvider("Google-Gemini-CLI")).toBe(true);
@@ -34,6 +54,10 @@ describe("isReasoningTagProvider", () => {
     expect(isReasoningTagProvider("some-minimax-model")).toBe(true);
   });
 
+  it("should return false for other providers", () => {
+    expect(isReasoningTagProvider("openai")).toBe(false);
+    expect(isReasoningTagProvider("anthropic")).toBe(false);
+    expect(isReasoningTagProvider("vertex")).toBe(false); // Unless it includes google-antigravity or minimax
   it("returns false for non-matching providers", () => {
     expect(isReasoningTagProvider("openai")).toBe(false);
     expect(isReasoningTagProvider("anthropic")).toBe(false);
