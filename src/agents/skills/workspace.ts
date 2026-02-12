@@ -97,6 +97,14 @@ function resolveUniqueSkillCommandName(base: string, used: Set<string>): string 
   return fallback;
 }
 
+const SKILL_ENTRIES_CACHE = new Map<
+  string,
+  {
+    mtimeMs: number;
+    entries: SkillEntry[];
+  }
+>();
+
 function loadSkillEntries(
   workspaceDir: string,
   opts?: {
@@ -105,6 +113,27 @@ function loadSkillEntries(
     bundledSkillsDir?: string;
   },
 ): SkillEntry[] {
+  const resolvedWorkspaceDir = resolveUserPath(workspaceDir);
+  const cacheKey = resolvedWorkspaceDir;
+
+  let workspaceMtime = 0;
+  try {
+    const stats = fs.statSync(path.join(resolvedWorkspaceDir, "skills"));
+    workspaceMtime = stats.mtimeMs;
+  } catch {
+    // If workspace skills dir doesn't exist, use 0 or handle effectively
+  }
+
+  const cached = SKILL_ENTRIES_CACHE.get(cacheKey);
+  if (cached && cached.mtimeMs === workspaceMtime) {
+    // Simple cache invalidation strategy: check mtime of local skills folder only.
+    // This assumes external/bundled/managed skills change less frequently or
+    // require restart/manual reload anyway.
+    // Ideally we would check mtimes of all source directories.
+    // For now, this optimizes the most common case: loop iteration without changes.
+    return cached.entries;
+  }
+
   const loadSkills = (params: { dir: string; source: string }): Skill[] => {
     const loaded = loadSkillsFromDir(params);
     if (Array.isArray(loaded)) {
@@ -202,6 +231,8 @@ function loadSkillEntries(
       invocation: resolveSkillInvocationPolicy(frontmatter),
     };
   });
+
+  SKILL_ENTRIES_CACHE.set(cacheKey, { mtimeMs: workspaceMtime, entries: skillEntries });
   return skillEntries;
 }
 

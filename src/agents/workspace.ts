@@ -236,6 +236,14 @@ async function resolveMemoryBootstrapEntries(
   return deduped;
 }
 
+const BOOTSTRAP_FILE_CACHE = new Map<
+  string,
+  {
+    mtimeMs: number;
+    content: string;
+  }
+>();
+
 export async function loadWorkspaceBootstrapFiles(dir: string): Promise<WorkspaceBootstrapFile[]> {
   const resolvedDir = resolveUserPath(dir);
 
@@ -278,7 +286,23 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
   const result: WorkspaceBootstrapFile[] = [];
   for (const entry of entries) {
     try {
+      const stats = await fs.stat(entry.filePath);
+      const cacheKey = entry.filePath;
+      const cached = BOOTSTRAP_FILE_CACHE.get(cacheKey);
+
+      if (cached && cached.mtimeMs === stats.mtimeMs) {
+        result.push({
+          name: entry.name,
+          path: entry.filePath,
+          content: cached.content,
+          missing: false,
+        });
+        continue;
+      }
+
       const content = await fs.readFile(entry.filePath, "utf-8");
+      BOOTSTRAP_FILE_CACHE.set(cacheKey, { mtimeMs: stats.mtimeMs, content });
+
       result.push({
         name: entry.name,
         path: entry.filePath,
