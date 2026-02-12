@@ -20,13 +20,12 @@ import { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.j
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 import { resolveUserPath } from "../utils.js";
-import { runGeminiEmbeddingBatches, type GeminiBatchRequest } from "./batch-gemini.js";
+import { runGeminiEmbeddingBatches } from "./batch-gemini.js";
 import {
   OPENAI_BATCH_ENDPOINT,
-  type OpenAiBatchRequest,
   runOpenAiEmbeddingBatches,
 } from "./batch-openai.js";
-import { type VoyageBatchRequest, runVoyageEmbeddingBatches } from "./batch-voyage.js";
+import { runVoyageEmbeddingBatches } from "./batch-voyage.js";
 import { enforceEmbeddingMaxInputTokens } from "./embedding-chunk-limits.js";
 import { estimateUtf8Bytes } from "./embedding-input-limits.js";
 import { DEFAULT_GEMINI_EMBEDDING_MODEL } from "./embeddings-gemini.js";
@@ -1705,13 +1704,19 @@ export class MemoryIndexManager implements MemorySearchManager {
 
     const missingChunks = missing.map((m) => m.chunk);
     const batches = this.buildEmbeddingBatches(missingChunks);
+    const tasks = batches.map((batch) => async () => {
+      return await this.embedBatchWithRetry(batch.map((chunk) => chunk.text));
+    });
+    const batchResults = await runWithConcurrency(tasks, EMBEDDING_INDEX_CONCURRENCY);
+
     const toCache: Array<{ hash: string; embedding: number[] }> = [];
     let cursor = 0;
-    for (const batch of batches) {
-      const batchEmbeddings = await this.embedBatchWithRetry(batch.map((chunk) => chunk.text));
+    for (let b = 0; b < batches.length; b++) {
+      const batch = batches[b];
+      const batchEmbeddings = batchResults[b];
       for (let i = 0; i < batch.length; i += 1) {
         const item = missing[cursor + i];
-        const embedding = batchEmbeddings[i] ?? [];
+        const embedding = batchEmbeddings?.[i] ?? [];
         if (item) {
           embeddings[item.index] = embedding;
           toCache.push({ hash: item.chunk.hash, embedding });
