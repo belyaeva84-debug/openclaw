@@ -22,7 +22,7 @@ export function parseAbsoluteTimeMs(input: string): number | null {
   }
   if (/^\d+$/.test(raw)) {
     const n = Number(raw);
-    if (Number.isFinite(n) && n > 0) {
+    if (Number.isFinite(n)) {
       return Math.floor(n);
     }
   }
