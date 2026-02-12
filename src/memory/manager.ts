@@ -1819,8 +1819,8 @@ export class MemoryIndexManager implements MemorySearchManager {
       "openai",
       (chunk, customId) => ({
         custom_id: customId,
-        method: "POST",
-        url: OPENAI_BATCH_ENDPOINT,
+        method: "POST" as const,
+        url: OPENAI_BATCH_ENDPOINT as "/v1/embeddings",
         body: {
           model: this.openAi?.model ?? this.provider.model,
           input: chunk.text,
@@ -1854,7 +1854,7 @@ export class MemoryIndexManager implements MemorySearchManager {
       (chunk, customId) => ({
         custom_id: customId,
         content: { parts: [{ text: chunk.text }] },
-        taskType: "RETRIEVAL_DOCUMENT",
+        taskType: "RETRIEVAL_DOCUMENT" as const,
       }),
       async (gemini, requests) =>
         await runGeminiEmbeddingBatches({
