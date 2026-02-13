@@ -22,9 +22,100 @@ import {
   sleep,
   sliceUtf16Safe,
   toWhatsappJid,
+  truncateUtf16Safe,
   withWhatsAppPrefix,
 } from "./utils.js";
 
+describe("sliceUtf16Safe", () => {
+  it("slices normal strings correctly", () => {
+    expect(sliceUtf16Safe("hello", 0, 5)).toBe("hello");
+    expect(sliceUtf16Safe("hello", 1, 4)).toBe("ell");
+    expect(sliceUtf16Safe("hello", 0)).toBe("hello");
+  });
+
+  it("handles negative indices", () => {
+    expect(sliceUtf16Safe("hello", -2)).toBe("lo");
+    expect(sliceUtf16Safe("hello", -3, -1)).toBe("ll");
+  });
+
+  it("swaps start and end if start > end", () => {
+    expect(sliceUtf16Safe("hello", 4, 1)).toBe("ell");
+  });
+
+  it("preserves complete surrogate pairs", () => {
+    const emoji = "👋"; // 2 chars: \uD83D \uDC4B
+    expect(sliceUtf16Safe(`hi ${emoji} there`, 3, 5)).toBe(emoji);
+  });
+
+  it("adjusts start if splitting a surrogate pair", () => {
+    const emoji = "👋"; // 2 chars: \uD83D \uDC4B
+    // The emoji is at index 0 and 1.
+    // If we start at index 1 (low surrogate), it should skip to index 2 (after the emoji).
+    expect(sliceUtf16Safe(`${emoji} world`, 1)).toBe(" world");
+  });
+
+  it("adjusts end if splitting a surrogate pair", () => {
+    const emoji = "👋"; // 2 chars: \uD83D \uDC4B
+    // The emoji is at index 0 and 1.
+    // If we end at index 1 (low surrogate), it should drop the high surrogate at index 0.
+    expect(sliceUtf16Safe(`${emoji} world`, 0, 1)).toBe("");
+  });
+
+  it("handles complex mixed content", () => {
+    const s = "a👋b🌍c";
+    // 'a' (0), '👋' (1,2), 'b' (3), '🌍' (4,5), 'c' (6)
+
+    // Slice from middle of first emoji to middle of second emoji
+    // Start: 2 (after 👋)
+    // End: 5 (middle of 🌍) -> should become 4 (before 🌍)
+    expect(sliceUtf16Safe(s, 2, 5)).toBe("b");
+
+    // Slice from middle of first emoji to end
+    // Start: 2 (after 👋)
+    expect(sliceUtf16Safe(s, 2)).toBe("b🌍c");
+
+    // Slice from start to middle of second emoji
+    // End: 5 (middle of 🌍) -> should become 4 (before 🌍)
+    expect(sliceUtf16Safe(s, 0, 5)).toBe("a👋b");
+  });
+});
+
+describe("truncateUtf16Safe", () => {
+  it("does not truncate short strings", () => {
+    expect(truncateUtf16Safe("hello", 10)).toBe("hello");
+  });
+
+  it("truncates normal strings", () => {
+    expect(truncateUtf16Safe("hello world", 5)).toBe("hello");
+  });
+
+  it("truncates at surrogate pair boundary safely", () => {
+    const emoji = "👋"; // 2 chars
+    const s = `hi ${emoji}`; // "hi 👋" -> h(0), i(1), space(2), emoji(3,4)
+    expect(truncateUtf16Safe(s, 3)).toBe("hi ");
+  });
+
+  it("avoid splitting surrogate pairs", () => {
+    const emoji = "👋"; // 2 chars
+    const s = `hi ${emoji}`; // "hi 👋" -> h(0), i(1), space(2), emoji(3,4)
+    // Truncate at 4 (middle of emoji)
+    // Should drop the emoji entirely because we can't include half of it
+    expect(truncateUtf16Safe(s, 4)).toBe("hi ");
+  });
+
+  it("includes surrogate pair if limit allows", () => {
+    const emoji = "👋"; // 2 chars
+    const s = `hi ${emoji}`; // "hi 👋" -> h(0), i(1), space(2), emoji(3,4)
+    expect(truncateUtf16Safe(s, 5)).toBe(`hi ${emoji}`);
+  });
+
+  it("handles zero and negative limits", () => {
+    expect(truncateUtf16Safe("hello", 0)).toBe("");
+    expect(truncateUtf16Safe("hello", -5)).toBe("");
+  });
+
+  it("handles empty strings", () => {
+    expect(truncateUtf16Safe("", 10)).toBe("");
 describe("clampNumber", () => {
   it("keeps value within range", () => {
     expect(clampNumber(5, 0, 10)).toBe(5);
