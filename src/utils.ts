@@ -56,14 +56,13 @@ export function safeParseJson<T>(raw: string): T | null {
 
 /**
  * Type guard for plain objects (not arrays, null, Date, RegExp, etc.).
- * Uses Object.prototype.toString for maximum safety.
  */
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
     typeof value === "object" &&
     value !== null &&
     !Array.isArray(value) &&
-    Object.prototype.toString.call(value) === "[object Object]"
+    Object.getPrototypeOf(value) === Object.prototype
   );
 }
 
@@ -255,6 +254,12 @@ function isLowSurrogate(codeUnit: number): boolean {
   return codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
 }
 
+/**
+ * Safely slices a string, ensuring no partial surrogate pairs are included.
+ * If the start or end index falls in the middle of a surrogate pair, it adjusts the index
+ * to exclude the partial character (shrinking the selection).
+ * Also handles negative indices and swaps arguments if start > end.
+ */
 export function sliceUtf16Safe(input: string, start: number, end?: number): string {
   const len = input.length;
 
