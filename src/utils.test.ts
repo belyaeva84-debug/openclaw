@@ -7,6 +7,7 @@ import {
   CONFIG_DIR,
   ensureDir,
   isRecord,
+  isPlainObject,
   jidToE164,
   normalizeE164,
   normalizePath,
@@ -247,5 +248,45 @@ describe("isRecord", () => {
     expect(isRecord(true)).toBe(false);
     expect(isRecord(undefined)).toBe(false);
     expect(isRecord(Symbol("sym"))).toBe(false);
+describe("isPlainObject", () => {
+  it("returns true for plain objects", () => {
+    expect(isPlainObject({})).toBe(true);
+    // eslint-disable-next-line no-new-object
+    expect(isPlainObject(new Object())).toBe(true);
+  });
+
+  it("returns false for null", () => {
+    expect(isPlainObject(null)).toBe(false);
+  });
+
+  it("returns false for arrays", () => {
+    expect(isPlainObject([])).toBe(false);
+    // eslint-disable-next-line @typescript-eslint/no-array-constructor
+    expect(isPlainObject(new Array())).toBe(false);
+  });
+
+  it("returns false for complex built-ins", () => {
+    expect(isPlainObject(new Date())).toBe(false);
+    expect(isPlainObject(new RegExp("a"))).toBe(false);
+    expect(isPlainObject(new Map())).toBe(false);
+    expect(isPlainObject(new Set())).toBe(false);
+  });
+
+  it("returns false for class instances", () => {
+    class Foo {}
+    expect(isPlainObject(new Foo())).toBe(false);
+  });
+
+  it("returns false for Object.create(null)", () => {
+    // Current implementation uses Object.getPrototypeOf(v) === Object.prototype,
+    // so objects with null prototype are excluded.
+    expect(isPlainObject(Object.create(null))).toBe(false);
+  });
+
+  it("returns false for primitives", () => {
+    expect(isPlainObject("string")).toBe(false);
+    expect(isPlainObject(123)).toBe(false);
+    expect(isPlainObject(true)).toBe(false);
+    expect(isPlainObject(undefined)).toBe(false);
   });
 });
