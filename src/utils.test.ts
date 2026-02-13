@@ -4,6 +4,8 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertWebChannel,
+  clampInt,
+  clampNumber,
   CONFIG_DIR,
   ensureDir,
   isRecord,
@@ -23,6 +25,45 @@ import {
   withWhatsAppPrefix,
 } from "./utils.js";
 
+describe("clampNumber", () => {
+  it("keeps value within range", () => {
+    expect(clampNumber(5, 0, 10)).toBe(5);
+  });
+
+  it("clamps to min if value is lower", () => {
+    expect(clampNumber(-5, 0, 10)).toBe(0);
+  });
+
+  it("clamps to max if value is higher", () => {
+    expect(clampNumber(15, 0, 10)).toBe(10);
+  });
+
+  it("handles value equal to min", () => {
+    expect(clampNumber(0, 0, 10)).toBe(0);
+  });
+
+  it("handles value equal to max", () => {
+    expect(clampNumber(10, 0, 10)).toBe(10);
+  });
+
+  it("handles floating point values", () => {
+    expect(clampNumber(5.5, 0, 10)).toBe(5.5);
+    expect(clampNumber(-0.1, 0, 10)).toBe(0);
+    expect(clampNumber(10.1, 0, 10)).toBe(10);
+  });
+});
+
+describe("clampInt", () => {
+  it("floors value and clamps within range", () => {
+    expect(clampInt(5.9, 0, 10)).toBe(5);
+  });
+
+  it("clamps floored value to min", () => {
+    expect(clampInt(-0.1, 0, 10)).toBe(0); // Math.floor(-0.1) is -1, clamps to 0
+  });
+
+  it("clamps floored value to max", () => {
+    expect(clampInt(10.5, 0, 10)).toBe(10);
 describe("sliceUtf16Safe", () => {
   it("slices simple ASCII strings correctly", () => {
     expect(sliceUtf16Safe("Hello World", 0, 5)).toBe("Hello");
