@@ -254,6 +254,12 @@ function isLowSurrogate(codeUnit: number): boolean {
   return codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
 }
 
+/**
+ * Safely slices a string, ensuring no partial surrogate pairs are included.
+ * If the start or end index falls in the middle of a surrogate pair, it adjusts the index
+ * to exclude the partial character (shrinking the selection).
+ * Also handles negative indices and swaps arguments if start > end.
+ */
 export function sliceUtf16Safe(input: string, start: number, end?: number): string {
   const len = input.length;
 
