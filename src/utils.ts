@@ -56,14 +56,13 @@ export function safeParseJson<T>(raw: string): T | null {
 
 /**
  * Type guard for plain objects (not arrays, null, Date, RegExp, etc.).
- * Uses Object.prototype.toString for maximum safety.
  */
 export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return (
     typeof value === "object" &&
     value !== null &&
     !Array.isArray(value) &&
-    Object.prototype.toString.call(value) === "[object Object]"
+    Object.getPrototypeOf(value) === Object.prototype
   );
 }
 
