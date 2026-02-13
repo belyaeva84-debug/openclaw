@@ -4,8 +4,12 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertWebChannel,
+  clampInt,
+  clampNumber,
   CONFIG_DIR,
   ensureDir,
+  isRecord,
+  isPlainObject,
   jidToE164,
   normalizeE164,
   normalizePath,
@@ -112,6 +116,96 @@ describe("truncateUtf16Safe", () => {
 
   it("handles empty strings", () => {
     expect(truncateUtf16Safe("", 10)).toBe("");
+describe("clampNumber", () => {
+  it("keeps value within range", () => {
+    expect(clampNumber(5, 0, 10)).toBe(5);
+  });
+
+  it("clamps to min if value is lower", () => {
+    expect(clampNumber(-5, 0, 10)).toBe(0);
+  });
+
+  it("clamps to max if value is higher", () => {
+    expect(clampNumber(15, 0, 10)).toBe(10);
+  });
+
+  it("handles value equal to min", () => {
+    expect(clampNumber(0, 0, 10)).toBe(0);
+  });
+
+  it("handles value equal to max", () => {
+    expect(clampNumber(10, 0, 10)).toBe(10);
+  });
+
+  it("handles floating point values", () => {
+    expect(clampNumber(5.5, 0, 10)).toBe(5.5);
+    expect(clampNumber(-0.1, 0, 10)).toBe(0);
+    expect(clampNumber(10.1, 0, 10)).toBe(10);
+  });
+});
+
+describe("clampInt", () => {
+  it("floors value and clamps within range", () => {
+    expect(clampInt(5.9, 0, 10)).toBe(5);
+  });
+
+  it("clamps floored value to min", () => {
+    expect(clampInt(-0.1, 0, 10)).toBe(0); // Math.floor(-0.1) is -1, clamps to 0
+  });
+
+  it("clamps floored value to max", () => {
+    expect(clampInt(10.5, 0, 10)).toBe(10);
+describe("sliceUtf16Safe", () => {
+  it("slices simple ASCII strings correctly", () => {
+    expect(sliceUtf16Safe("Hello World", 0, 5)).toBe("Hello");
+    expect(sliceUtf16Safe("Hello World", 6)).toBe("World");
+  });
+
+  it("slices strings with emojis correctly (valid boundaries)", () => {
+    // "A🐬B" -> A (0), D83D (1), DC2C (2), B (3)
+    const input = "A🐬B";
+    expect(sliceUtf16Safe(input, 0, 4)).toBe("A🐬B");
+    expect(sliceUtf16Safe(input, 1, 3)).toBe("🐬");
+  });
+
+  it("handles splitting a surrogate pair at the start", () => {
+    const input = "A🐬B";
+    // Start at index 2 (low surrogate of dolphin)
+    // Should skip the low surrogate and start at B
+    expect(sliceUtf16Safe(input, 2, 4)).toBe("B");
+  });
+
+  it("handles splitting a surrogate pair at the end", () => {
+    const input = "A🐬B";
+    // End at index 2 (low surrogate of dolphin)
+    // Should exclude the high surrogate at index 1
+    expect(sliceUtf16Safe(input, 0, 2)).toBe("A");
+  });
+
+  it("handles splitting a surrogate pair at both ends (empty result)", () => {
+    const input = "A🐬B";
+    // Start at 1 (H), End at 2 (L).
+    // Start 1 (H) -> valid start (not L preceded by H).
+    // End 2 (L) -> invalid end (L preceded by H). reduced to 1.
+    // Result slice(1, 1) -> ""
+    expect(sliceUtf16Safe(input, 1, 2)).toBe("");
+  });
+
+  it("handles negative indices safely", () => {
+    const input = "A🐬B";
+    // slice(-2) -> start at index 2 (L).
+    // Should skip L and start at 3 (B).
+    expect(sliceUtf16Safe(input, -2)).toBe("B");
+  });
+
+  it("swaps start and end if start > end", () => {
+    const input = "A🐬B";
+    expect(sliceUtf16Safe(input, 4, 0)).toBe("A🐬B");
+  });
+
+  it("handles out of bounds indices", () => {
+    const input = "ABC";
+    expect(sliceUtf16Safe(input, -10, 10)).toBe("ABC");
   });
 });
 
@@ -312,5 +406,74 @@ describe("resolveUserPath", () => {
   it("keeps blank paths blank", () => {
     expect(resolveUserPath("")).toBe("");
     expect(resolveUserPath("   ")).toBe("");
+  });
+});
+
+describe("isRecord", () => {
+  it("returns true for plain objects", () => {
+    expect(isRecord({})).toBe(true);
+    expect(isRecord({ a: 1 })).toBe(true);
+  });
+
+  it("returns true for class instances", () => {
+    class Foo {}
+    expect(isRecord(new Foo())).toBe(true);
+  });
+
+  it("returns false for null", () => {
+    expect(isRecord(null)).toBe(false);
+  });
+
+  it("returns false for arrays", () => {
+    expect(isRecord([])).toBe(false);
+    expect(isRecord([1, 2])).toBe(false);
+  });
+
+  it("returns false for primitives", () => {
+    expect(isRecord("string")).toBe(false);
+    expect(isRecord(123)).toBe(false);
+    expect(isRecord(true)).toBe(false);
+    expect(isRecord(undefined)).toBe(false);
+    expect(isRecord(Symbol("sym"))).toBe(false);
+describe("isPlainObject", () => {
+  it("returns true for plain objects", () => {
+    expect(isPlainObject({})).toBe(true);
+    // eslint-disable-next-line no-new-object
+    expect(isPlainObject(new Object())).toBe(true);
+  });
+
+  it("returns false for null", () => {
+    expect(isPlainObject(null)).toBe(false);
+  });
+
+  it("returns false for arrays", () => {
+    expect(isPlainObject([])).toBe(false);
+    // eslint-disable-next-line @typescript-eslint/no-array-constructor
+    expect(isPlainObject(new Array())).toBe(false);
+  });
+
+  it("returns false for complex built-ins", () => {
+    expect(isPlainObject(new Date())).toBe(false);
+    expect(isPlainObject(new RegExp("a"))).toBe(false);
+    expect(isPlainObject(new Map())).toBe(false);
+    expect(isPlainObject(new Set())).toBe(false);
+  });
+
+  it("returns false for class instances", () => {
+    class Foo {}
+    expect(isPlainObject(new Foo())).toBe(false);
+  });
+
+  it("returns false for Object.create(null)", () => {
+    // Current implementation uses Object.getPrototypeOf(v) === Object.prototype,
+    // so objects with null prototype are excluded.
+    expect(isPlainObject(Object.create(null))).toBe(false);
+  });
+
+  it("returns false for primitives", () => {
+    expect(isPlainObject("string")).toBe(false);
+    expect(isPlainObject(123)).toBe(false);
+    expect(isPlainObject(true)).toBe(false);
+    expect(isPlainObject(undefined)).toBe(false);
   });
 });
